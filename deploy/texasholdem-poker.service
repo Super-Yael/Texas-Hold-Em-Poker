@@ -1,0 +1,22 @@
+[Unit]
+Description=Texas Holdem poker application
+After=network.target
+
+[Service]
+Type=simple
+User=texasholdem
+Group=texasholdem
+WorkingDirectory=/home/texasholdem/app
+Environment=NODE_ENV=production
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment=POKER_DB_PATH=/home/texasholdem/app/.data/poker.sqlite
+Environment=POKER_PUBLIC_ORIGIN=https://poker.20100501.xyz
+ExecStart=/usr/bin/node --import tsx /home/texasholdem/app/server.ts --hostname 127.0.0.1 --port 3000
+Restart=always
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
