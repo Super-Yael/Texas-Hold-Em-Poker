@@ -1074,6 +1074,13 @@ export default function PokerHome() {
             </div>
           ) : (
             <>
+              {typeof game.strengthPercentile === "number" && (
+                <div className="hand-strength-line">
+                  {game.board.length === 0
+                    ? `当前起手牌强度超过 ${game.strengthPercentile}% 的起手牌`
+                    : `当前牌型强度超过 ${game.strengthPercentile}% 的牌型`}
+                </div>
+              )}
               <div className="turn-line">
                 {game.canAct ? (
                   <>

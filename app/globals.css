@@ -1329,6 +1329,15 @@ button {
   align-items: center;
   gap: 9px;
 }
+.hand-strength-line {
+  min-height: 18px;
+  margin: 0 0 3px;
+  color: #c9b57e;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
 .turn-spark,
 .turn-wait {
   width: 29px;

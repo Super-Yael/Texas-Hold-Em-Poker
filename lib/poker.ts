@@ -88,6 +88,41 @@ function compareScore(
       return (a.kickers[i] ?? 0) - (b.kickers[i] ?? 0);
   return 0;
 }
+
+function clampPercent(value: number) {
+  return Math.max(1, Math.min(99, Math.round(value)));
+}
+
+function startingHandStrength(hole: Card[]) {
+  if (hole.length !== 2) return undefined;
+  const ranks = hole.map(cardRank).sort((a, b) => b - a);
+  const suited = hole[0][0] === hole[1][0];
+  if (ranks[0] === ranks[1]) return clampPercent(55 + ((ranks[0] - 2) / 12) * 43);
+  const gap = ranks[0] - ranks[1];
+  const highCard = ((ranks[0] - 2) / 12) * 38;
+  const suitedBonus = suited ? 10 : 0;
+  const connectedBonus = gap <= 1 ? 8 : gap === 2 ? 4 : 0;
+  return clampPercent(8 + highCard + suitedBonus + connectedBonus);
+}
+
+function madeHandStrength(score: HandScore) {
+  const floors = [3, 17, 32, 47, 60, 72, 82, 91, 97, 99];
+  const floor = floors[score.category] ?? 3;
+  const top = score.category === 9 ? 99 : (floors[score.category + 1] ?? 100) - 1;
+  const encoded = score.kickers.reduce((value, kicker, index) => {
+    const weight = Math.pow(15, score.kickers.length - index - 1);
+    return value + kicker * weight;
+  }, 0);
+  const maximum = Math.pow(15, score.kickers.length) - 1;
+  return clampPercent(floor + ((top - floor) * encoded) / maximum);
+}
+
+function handStrengthPercentile(state: PokerState, player: Player) {
+  if (player.folded || player.hole.length !== 2) return undefined;
+  if (state.board.length === 0) return startingHandStrength(player.hole);
+  const score = player.handScore ?? evaluateHand([...player.hole, ...state.board]);
+  return score ? madeHandStrength(score) : undefined;
+}
 function evaluateFive(cards: Card[]): HandScore {
   const values = cards.map(cardRank).sort((a, b) => b - a);
   const groups = new Map<number, number>();
@@ -764,6 +799,7 @@ export function publicGame(state: PokerState, viewerId: string) {
     ante: state.ante ?? 0,
     deckCount: state.deckCount ?? 1,
     stage: state.stage,
+    strengthPercentile: handStrengthPercentile(state, viewer),
     fourOfAKindMultiplier: state.fourOfAKindMultiplier ?? 1,
     straightMultiplier: state.straightMultiplier ?? 1,
     jokersEnabled: state.jokersEnabled ?? false,

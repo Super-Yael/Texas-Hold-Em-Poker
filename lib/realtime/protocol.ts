@@ -7,7 +7,10 @@ export type SharedView = Omit<RoomView, "invitations">;
 export type PersonalView = {
   invitations: RoomView["invitations"];
   game:
-    (Pick<Game, "toCall" | "canAct" | "canRaise" | "canAllIn"> & { player: Player | null }) | null;
+    | (Pick<Game, "toCall" | "canAct" | "canRaise" | "canAllIn" | "strengthPercentile"> & {
+        player: Player | null;
+      })
+    | null;
 };
 export type PublicState = { epoch: string; roomId: string; revision: number; view: SharedView };
 export type SignedState = { type: "state"; payload: string; signature: string };
@@ -54,6 +57,7 @@ export function splitView(
       game: game
         ? {
             ...game,
+            strengthPercentile: undefined,
             toCall: 0,
             canAct: false,
             canRaise: false,
@@ -75,6 +79,7 @@ export function splitView(
             canAct: game.canAct,
             canRaise: game.canRaise,
             canAllIn: game.canAllIn,
+            strengthPercentile: game.strengthPercentile,
             player: game.players.find((player) => player.id === viewerId) ?? null,
           }
         : null,
