@@ -93,35 +93,70 @@ function clampPercent(value: number) {
   return Math.max(1, Math.min(99, Math.round(value)));
 }
 
-function startingHandStrength(hole: Card[]) {
-  if (hole.length !== 2) return undefined;
-  const ranks = hole.map(cardRank).sort((a, b) => b - a);
-  const suited = hole[0][0] === hole[1][0];
-  if (ranks[0] === ranks[1]) return clampPercent(55 + ((ranks[0] - 2) / 12) * 43);
-  const gap = ranks[0] - ranks[1];
-  const highCard = ((ranks[0] - 2) / 12) * 38;
-  const suitedBonus = suited ? 10 : 0;
-  const connectedBonus = gap <= 1 ? 8 : gap === 2 ? 4 : 0;
-  return clampPercent(8 + highCard + suitedBonus + connectedBonus);
-}
+const strengthCache = new Map<string, number>();
 
-function madeHandStrength(score: HandScore) {
-  const floors = [3, 17, 32, 47, 60, 72, 82, 91, 97, 99];
-  const floor = floors[score.category] ?? 3;
-  const top = score.category === 9 ? 99 : (floors[score.category + 1] ?? 100) - 1;
-  const encoded = score.kickers.reduce((value, kicker, index) => {
-    const weight = Math.pow(15, score.kickers.length - index - 1);
-    return value + kicker * weight;
-  }, 0);
-  const maximum = Math.pow(15, score.kickers.length) - 1;
-  return clampPercent(floor + ((top - floor) * encoded) / maximum);
-}
+function estimateHandStrength(state: PokerState, player: Player) {
+  if (
+    state.stage === "complete" ||
+    player.folded ||
+    player.hole.length !== 2
+  )
+    return undefined;
+  const opponents = state.players.filter(
+    (candidate) =>
+      candidate.id !== player.id && !candidate.folded && !candidate.eliminated && candidate.stack > 0,
+  );
+  if (!opponents.length) return 99;
+  const key = [
+    state.gameId,
+    state.handNo,
+    player.id,
+    state.board.join(","),
+    player.hole.join(","),
+    opponents.length,
+    state.deckCount ?? 1,
+    state.jokersEnabled ? 1 : 0,
+  ].join("|");
+  const cached = strengthCache.get(key);
+  if (cached !== undefined) return cached;
 
-function handStrengthPercentile(state: PokerState, player: Player) {
-  if (player.folded || player.hole.length !== 2) return undefined;
-  if (state.board.length === 0) return startingHandStrength(player.hole);
-  const score = player.handScore ?? evaluateHand([...player.hole, ...state.board]);
-  return score ? madeHandStrength(score) : undefined;
+  const known = new Map<string, number>();
+  for (const card of [...player.hole, ...state.board]) known.set(card, (known.get(card) ?? 0) + 1);
+  const samples = 128;
+  let equity = 0;
+  for (let sample = 0; sample < samples; sample++) {
+    const blocked = new Map(known);
+    const available = newDeck(state.deckCount ?? 1, state.jokersEnabled ?? false).filter((card) => {
+      const count = blocked.get(card) ?? 0;
+      if (!count) return true;
+      blocked.set(card, count - 1);
+      return false;
+    });
+    let cursor = 0;
+    const opponentHoles = opponents.map(() => [available[cursor++], available[cursor++]]);
+    const board = [...state.board];
+    while (board.length < 5) board.push(available[cursor++]);
+    const mine = evaluateHand([...player.hole, ...board]);
+    if (!mine) continue;
+    let best = mine;
+    let tied = 1;
+    for (const hole of opponentHoles) {
+      const score = evaluateHand([...hole, ...board]);
+      if (!score) continue;
+      const comparison = compareScore(score, best);
+      if (comparison > 0) {
+        best = score;
+        tied = 0;
+      } else if (comparison === 0) {
+        tied++;
+      }
+    }
+    if (compareScore(mine, best) === 0) equity += 1 / tied;
+  }
+  const result = clampPercent((equity / samples) * 100);
+  strengthCache.set(key, result);
+  if (strengthCache.size > 512) strengthCache.delete(strengthCache.keys().next().value!);
+  return result;
 }
 function evaluateFive(cards: Card[]): HandScore {
   const values = cards.map(cardRank).sort((a, b) => b - a);
@@ -799,7 +834,7 @@ export function publicGame(state: PokerState, viewerId: string) {
     ante: state.ante ?? 0,
     deckCount: state.deckCount ?? 1,
     stage: state.stage,
-    strengthPercentile: handStrengthPercentile(state, viewer),
+    strengthPercentile: estimateHandStrength(state, viewer),
     fourOfAKindMultiplier: state.fourOfAKindMultiplier ?? 1,
     straightMultiplier: state.straightMultiplier ?? 1,
     jokersEnabled: state.jokersEnabled ?? false,
